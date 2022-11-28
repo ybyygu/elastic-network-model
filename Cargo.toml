@@ -1,0 +1,23 @@
+# [[file:enm.onte::e345323a][e345323a]]
+[package]
+name = "elastic-network-model"
+version = "0.0.1"
+edition = "2021"
+authors = ["Wenping Guo <ybyygu@gmail.com>"]
+
+[dependencies]
+clap = { version = "4", features = ["derive", "env"] }
+gut = { version = "0.4", package = "gchemol-gut" }
+
+[dev-dependencies]
+
+# workspace independent
+[workspace]
+
+[features]
+# for adhoc hacking
+adhoc = []
+
+[patch.crates-io]
+gchemol-gut = { path = "/home/ybyygu/Workspace/Programming/gchemol-rs/gut" }
+# e345323a ends here
