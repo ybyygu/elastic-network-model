@@ -1,4 +1,4 @@
-// [[file:../enm.onte::d5052804][d5052804]]
+// [[file:../enm.note::d5052804][d5052804]]
 use gut::prelude::*;
 use nalgebra::{DMatrix, DVector};
 use vecfx::*;
@@ -34,7 +34,7 @@ pub fn calculate_normal_modes(hessian: DMatrix<f64>) -> (Vec<f64>, Vec<DVector<f
     let vectors = eigen.eigenvectors;
     let evalues = eigen.eigenvalues;
 
-    // sort the eigenvalues in descending order
+    // sort the eigenvalues in ascending order
     let indices: Vec<_> = evalues
         .iter()
         .enumerate()
@@ -68,30 +68,22 @@ impl AnisotropicNetworkModel {
         let mut hessian = DMatrix::from_vec(3 * n, 3 * n, data);
         for i in 0..n {
             for j in 0..i {
-                let mut super_element = Matrix3f::zeros();
-                let ri = coords[i].as_vector_slice();
-                let rj = coords[j].as_vector_slice();
-                if i != j {
-                    let dist2 = (rj - ri).norm_squared();
-                    if dist2 < cutoff2 {
-                        for n in 0..3 {
-                            for m in 0..3 {
-                                let a = coords[i][n] - coords[j][n];
-                                let b = coords[i][m] - coords[j][m];
-                                super_element[(n, m)] = -gamma * a * b / dist2;
-                            }
-                        }
-                    }
+                assert_ne!(i, j);
+                let ri: Vector3f = coords[i].into();
+                let rj: Vector3f = coords[j].into();
+                let rij = rj - ri;
+                let dist2 = (rj - ri).norm_squared();
+                if dist2 < cutoff2 {
+                    let super_element = -gamma / dist2 * rij * rij.transpose();
+                    let mut sub = hessian.fixed_slice_mut::<3, 3>(i * 3, j * 3);
+                    sub.copy_from(&super_element);
+                    let mut sub = hessian.fixed_slice_mut::<3, 3>(j * 3, i * 3);
+                    sub.copy_from(&super_element);
+                    let mut sub = hessian.fixed_slice_mut::<3, 3>(i * 3, i * 3);
+                    sub -= super_element;
+                    let mut sub = hessian.fixed_slice_mut::<3, 3>(j * 3, j * 3);
+                    sub -= super_element;
                 }
-
-                let mut sub = hessian.fixed_slice_mut::<3, 3>(i * 3, j * 3);
-                sub.copy_from(&super_element);
-                let mut sub = hessian.fixed_slice_mut::<3, 3>(j * 3, i * 3);
-                sub.copy_from(&super_element);
-                let mut sub = hessian.fixed_slice_mut::<3, 3>(i * 3, i * 3);
-                sub -= super_element;
-                let mut sub = hessian.fixed_slice_mut::<3, 3>(j * 3, j * 3);
-                sub -= super_element;
             }
         }
         hessian
