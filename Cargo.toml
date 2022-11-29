@@ -6,8 +6,9 @@ edition = "2021"
 authors = ["Wenping Guo <ybyygu@gmail.com>"]
 
 [dependencies]
-clap = { version = "4", features = ["derive", "env"] }
+# clap = { version = "4", features = ["derive", "env"] }
 gut = { version = "0.4", package = "gchemol-gut" }
+vecfx = { version = "0.1.2", features = ["nalgebra"] }
 
 [dev-dependencies]
 
