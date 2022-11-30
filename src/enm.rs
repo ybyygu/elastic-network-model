@@ -1,16 +1,14 @@
 // [[file:../enm.note::d5052804][d5052804]]
 use gut::prelude::*;
-use nalgebra::{DMatrix, DVector};
+use nalgebra::DMatrix;
 use vecfx::*;
 
 /// Anisotropic Network Model (ANM) analysis
 ///
 /// # References
 ///
-/// - Atilgan, A. R.; Durell, S. R.; Jernigan, R. L.; Demirel, M. C.;
-/// Keskin, O.; Bahar, I. Anisotropy of Fluctuation Dynamics of
-/// Proteins with an Elastic Network Model. Biophysical Journal 2001,
-/// 80 (1), 505–515. <https://doi.org/10.1016/S0006-3495(01)76033-X>
+/// - Atilgan, A. R. et al. Biophysical Journal 2001, 80 (1), 505–515. <https://doi.org/10.1016/S0006-3495(01)76033-X>
+/// - <https://en.wikipedia.org/wiki/Anisotropic_Network_Model>
 pub struct AnisotropicNetworkModel {
     cutoff: f64,
     gamma: f64,
@@ -29,7 +27,7 @@ impl Default for AnisotropicNetworkModel {
 /// `hessian`. Returns 3N-6 eigen values sorted in ascending order and
 /// their associated eigen vectors with 6 translational and rotational
 /// modes removed.
-pub fn calculate_normal_modes(hessian: DMatrix<f64>) -> (Vec<f64>, Vec<DVector<f64>>) {
+pub fn calculate_normal_modes(hessian: DMatrix<f64>) -> Vec<(f64, Vec<f64>)> {
     let eigen = hessian.symmetric_eigen();
     let vectors = eigen.eigenvectors;
     let evalues = eigen.eigenvalues;
@@ -46,14 +44,13 @@ pub fn calculate_normal_modes(hessian: DMatrix<f64>) -> (Vec<f64>, Vec<DVector<f
     let mut evalues_ = vec![];
     let mut vectors_ = vec![];
     for &i in indices.iter() {
-        evalues_.push(evalues[i]);
-        vectors_.push(vectors.column(i).into_owned());
+        // FIXME: eigen value to frequency
+        evalues_.push(evalues[i].sqrt() * 1302.79);
+        vectors_.push(vectors.column(i).as_slice().to_owned());
     }
 
     // skip the first 6 modes with zero eigenvalues for translation or rotation
-    let evalues = evalues_.into_iter().skip(6).collect_vec();
-    let vectors = vectors_.into_iter().skip(6).collect_vec();
-    (evalues, vectors)
+    evalues_.into_iter().zip(vectors_).skip(6).collect_vec()
 }
 
 impl AnisotropicNetworkModel {
@@ -84,6 +81,10 @@ impl AnisotropicNetworkModel {
                     let mut sub = hessian.fixed_slice_mut::<3, 3>(j * 3, j * 3);
                     sub -= super_element;
                 }
+                // FIXME: mass weighted for each atom
+                let mij_sqrt = (28.0).sqrt() * (28.0).sqrt();
+                hessian[(i, j)] /= mij_sqrt;
+                hessian[(j, i)] /= mij_sqrt;
             }
         }
         hessian
@@ -105,14 +106,15 @@ fn test_enm() {
                   [ -3.85700000,  -0.76600000,  -0.99200000]];
 
     let hessian = AnisotropicNetworkModel::default().build_hessian_matrix(&coords);
-    let (evalues, vectors) = calculate_normal_modes(hessian);
+    let modes = calculate_normal_modes(hessian);
 
-    assert_relative_eq!(evalues[0], 0.47256486306316137, epsilon = 1E-4);
-    assert_relative_eq!(evalues[1], 0.824857, epsilon = 1E-4);
-    assert_relative_eq!(evalues[2], 0.828897, epsilon = 1E-4);
-    assert_relative_eq!(evalues[3], 1.051973, epsilon = 1E-4);
+    assert_relative_eq!(modes[0].0, 0.47256486306316137, epsilon = 1E-4);
+    assert_relative_eq!(modes[1].0, 0.824857, epsilon = 1E-4);
+    assert_relative_eq!(modes[2].0, 0.828897, epsilon = 1E-4);
+    assert_relative_eq!(modes[3].0, 1.051973, epsilon = 1E-4);
 
-    assert_relative_eq!(vectors[0][0], 0.22011, epsilon = 1E-4);
-    assert_relative_eq!(vectors[0][2], -0.36812, epsilon = 1E-4);
+    let vec = &modes[0].1;
+    assert_relative_eq!(vec[0], 0.22011, epsilon = 1E-4);
+    assert_relative_eq!(vec[2], -0.36812, epsilon = 1E-4);
 }
 // d5052804 ends here
