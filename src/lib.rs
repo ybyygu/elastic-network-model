@@ -1,5 +1,5 @@
 // [[file:../enm.note::a8b9ab5d][a8b9ab5d]]
-#![deny(warnings)]
+// #![deny(warnings)]
 
 mod enm;
 

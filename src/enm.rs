@@ -9,9 +9,11 @@ use vecfx::*;
 ///
 /// - Atilgan, A. R. et al. Biophysical Journal 2001, 80 (1), 505–515. <https://doi.org/10.1016/S0006-3495(01)76033-X>
 /// - <https://en.wikipedia.org/wiki/Anisotropic_Network_Model>
+#[derive(Debug, Clone)]
 pub struct AnisotropicNetworkModel {
-    cutoff: f64,
-    gamma: f64,
+    pub cutoff: f64,
+    pub gamma: f64,
+    pub mass_weighted: bool,
 }
 
 impl Default for AnisotropicNetworkModel {
@@ -19,6 +21,7 @@ impl Default for AnisotropicNetworkModel {
         Self {
             cutoff: 15.0,
             gamma: 1.0,
+            mass_weighted: false,
         }
     }
 }
@@ -27,7 +30,7 @@ impl Default for AnisotropicNetworkModel {
 /// `hessian`. Returns 3N-6 eigen values sorted in ascending order and
 /// their associated eigen vectors with 6 translational and rotational
 /// modes removed.
-pub fn calculate_normal_modes(hessian: DMatrix<f64>) -> Vec<(f64, Vec<f64>)> {
+fn calculate_normal_modes(hessian: DMatrix<f64>) -> Vec<(f64, Vec<f64>)> {
     let eigen = hessian.symmetric_eigen();
     let vectors = eigen.eigenvectors;
     let evalues = eigen.eigenvalues;
@@ -45,7 +48,8 @@ pub fn calculate_normal_modes(hessian: DMatrix<f64>) -> Vec<(f64, Vec<f64>)> {
     let mut vectors_ = vec![];
     for &i in indices.iter() {
         // FIXME: eigen value to frequency
-        evalues_.push(evalues[i].sqrt() * 1302.79);
+        // evalues_.push(evalues[i].sqrt() * 1302.79);
+        evalues_.push(evalues[i]);
         vectors_.push(vectors.column(i).as_slice().to_owned());
     }
 
@@ -55,9 +59,13 @@ pub fn calculate_normal_modes(hessian: DMatrix<f64>) -> Vec<(f64, Vec<f64>)> {
 
 impl AnisotropicNetworkModel {
     /// Build Hessian matrix (3N*3N) for Cartesian `coords` of N atoms.
-    pub fn build_hessian_matrix(&self, coords: &[[f64; 3]]) -> DMatrix<f64> {
+    pub fn build_hessian_matrix<'a>(&self, coords: &[[f64; 3]], masses: impl Into<Option<&'a [f64]>>) -> DMatrix<f64> {
         let n = coords.len();
         let data = vec![0.0; 3 * n * 3 * n];
+        let masses = masses.into();
+        if masses.is_some() {
+            assert_eq!(masses.unwrap().len(), n, "invalid number of masses");
+        }
 
         let gamma = self.gamma;
         let cutoff2 = self.cutoff.powi(2);
@@ -81,13 +89,52 @@ impl AnisotropicNetworkModel {
                     let mut sub = hessian.fixed_slice_mut::<3, 3>(j * 3, j * 3);
                     sub -= super_element;
                 }
-                // FIXME: mass weighted for each atom
-                let mij_sqrt = (28.0).sqrt() * (28.0).sqrt();
-                hessian[(i, j)] /= mij_sqrt;
-                hessian[(j, i)] /= mij_sqrt;
+                // mass weighted Hessian matrix for each atom
+                if self.mass_weighted {
+                    // treat as Carbon atom
+                    let mi = masses.map(|x| x[i]).unwrap_or(12.011);
+                    let mj = masses.map(|x| x[j]).unwrap_or(12.011);
+                    let mij_sqrt = mi.sqrt() * mj.sqrt();
+                    hessian[(i, j)] /= mij_sqrt;
+                    hessian[(j, i)] /= mij_sqrt;
+                }
             }
         }
         hessian
+    }
+
+    /// Calculates the normal modes by diagonalizing the Hessian
+    /// matrix `hessian`. Returns 3N-6 eigen values sorted in
+    /// ascending order and their associated eigen vectors with 6
+    /// translational and rotational modes removed.
+    pub fn calculate_normal_modes(&self, hessian: DMatrix<f64>) -> Vec<(f64, Vec<f64>)> {
+        let eigen = hessian.symmetric_eigen();
+        let vectors = eigen.eigenvectors;
+        let evalues = eigen.eigenvalues;
+
+        // sort the eigenvalues in ascending order
+        let indices: Vec<_> = evalues
+            .iter()
+            .enumerate()
+            .sorted_by_key(|x| OrderedFloat(*x.1))
+            .map(|x| x.0)
+            .collect();
+
+        // sort the corresponding eigenvectors in ascending order
+        let mut evalues_ = vec![];
+        let mut vectors_ = vec![];
+        for &i in indices.iter() {
+            // eigen value to frequency in cm-1
+            if self.mass_weighted {
+                evalues_.push(evalues[i].sqrt() * 1302.79);
+            } else {
+                evalues_.push(evalues[i]);
+            }
+            vectors_.push(vectors.column(i).as_slice().to_owned());
+        }
+
+        // skip the first 6 modes with zero eigenvalues for translation or rotation
+        evalues_.into_iter().zip(vectors_).skip(6).collect_vec()
     }
 }
 
@@ -105,8 +152,9 @@ fn test_enm() {
                   [ -4.25300000,   0.54000000,   0.15700000],
                   [ -3.85700000,  -0.76600000,  -0.99200000]];
 
-    let hessian = AnisotropicNetworkModel::default().build_hessian_matrix(&coords);
-    let modes = calculate_normal_modes(hessian);
+    let anm = AnisotropicNetworkModel::default();
+    let hessian = anm.build_hessian_matrix(&coords, None);
+    let modes = anm.calculate_normal_modes(hessian);
 
     assert_relative_eq!(modes[0].0, 0.47256486306316137, epsilon = 1E-4);
     assert_relative_eq!(modes[1].0, 0.824857, epsilon = 1E-4);
