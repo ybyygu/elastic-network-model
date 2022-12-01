@@ -126,7 +126,8 @@ impl AnisotropicNetworkModel {
         for &i in indices.iter() {
             // eigen value to frequency in cm-1
             if self.mass_weighted {
-                evalues_.push(evalues[i].sqrt() * 1302.79);
+                // FIXME: avoid NaN for very small eigenvalue, which could be negative
+                evalues_.push(evalues[i].abs().sqrt() * 1302.79);
             } else {
                 evalues_.push(evalues[i]);
             }
